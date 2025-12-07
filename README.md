@@ -4,6 +4,8 @@
 
 ReticulumXMR enables Monero transactions when you don't have direct internet access. Using the [Reticulum Network Stack](https://reticulum.network/), you can check balances and broadcast transactions over any transport Reticulum supports - including radio links, I2P, or local networks.
 
+![TUI Screenshot](docs/tui-screenshot.png)
+
 ## Why Use This?
 
 This is **not** a replacement for normal Monero usage. Use ReticulumXMR when:
@@ -265,6 +267,39 @@ Transaction broadcast!
   TX Hash: b9b45d1be49ee...
   Fee: 0.000021 XMR
 ```
+
+## Usage Workflow
+
+**Recommended setup: Two terminal windows**
+
+```
+┌─────────────────────────────────┬─────────────────────────────────┐
+│  Terminal 1: Communication      │  Terminal 2: Transactions       │
+├─────────────────────────────────┼─────────────────────────────────┤
+│                                 │                                 │
+│  $ nomadnet                     │  $ reticulumxmr-tui <hub-hash>  │
+│                                 │                                 │
+│  - Exchange addresses via LXMF  │  - Check balance                │
+│  - Coordinate with peers        │  - Send XMR                     │
+│  - Monitor network status       │  - View transaction status      │
+│                                 │                                 │
+└─────────────────────────────────┴─────────────────────────────────┘
+```
+
+**Terminal 1 - NomadNet** (optional but recommended):
+- Standard Reticulum messaging client
+- Exchange Monero addresses securely over encrypted LXMF
+- Coordinate payments with other Reticulum users
+- Install: `pip install nomadnet`
+
+**Terminal 2 - ReticulumXMR TUI**:
+- Connect to your hub and manage XMR
+- Press `S` to send, enter address (paste from NomadNet), enter amount
+- Press `R` to refresh balance after transactions
+
+**Simpler alternative** - If you don't need peer messaging:
+- Just run the TUI: `reticulumxmr-tui <hub-hash>`
+- Use CLI for scripting: `python -m reticulumxmr.client <hub-hash> balance`
 
 ## Data Transfer Sizes
 

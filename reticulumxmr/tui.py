@@ -29,7 +29,12 @@ class ReticulumXMRTUI:
         self.operator_id = operator_id
         self.local_wallet_rpc = local_wallet_rpc
 
-        self.client: Optional[ReticulumXMRClient] = None
+        # Initialize client in main thread (RNS needs main thread for signals)
+        self.client = ReticulumXMRClient(
+            hub_destination=self.hub_destination,
+            operator_id=self.operator_id,
+            local_wallet_rpc=self.local_wallet_rpc
+        )
         self.connected = False
         self.connecting = False
 
@@ -58,11 +63,6 @@ class ReticulumXMRTUI:
 
         def do_connect():
             try:
-                self.client = ReticulumXMRClient(
-                    hub_destination=self.hub_destination,
-                    operator_id=self.operator_id,
-                    local_wallet_rpc=self.local_wallet_rpc
-                )
                 if self.client.connect(timeout=60):
                     self.connected = True
                     self.status_message = "Connected"
