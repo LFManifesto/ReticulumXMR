@@ -1,103 +1,138 @@
 # ReticulumXMR
 
-**Monero transactions over Reticulum mesh networks**
+**Monero transactions over Reticulum networks**
 
-ReticulumXMR enables off-grid Monero transactions over low-bandwidth mesh networks like HF radio, LoRa, and packet radio using the [Reticulum Network Stack](https://reticulum.network/).
+ReticulumXMR enables Monero transactions when you don't have direct internet access. Using the [Reticulum Network Stack](https://reticulum.network/), you can check balances and broadcast transactions over any transport Reticulum supports - including radio links, I2P, or local networks.
 
-## Status
+## Why Use This?
 
-**Cold Signing Mode: VERIFIED WORKING** - Balance queries and transaction workflows tested on 2025-12-06.
+This is **not** a replacement for normal Monero usage. Use ReticulumXMR when:
 
-| Feature | Status |
-|---------|--------|
-| Balance queries over Reticulum | Working |
-| Cold signing workflow | Working |
-| Transaction broadcast | Working |
-| TCP/IP transport | Verified |
-| I2P transport | Verified |
-| LoRa transport | Untested |
-| HF radio transport | Untested |
+| Scenario | Why ReticulumXMR |
+|----------|------------------|
+| You're off-grid with only radio connectivity | Hub with internet relays your transactions |
+| Internet is down but local network works | Reach a hub via TCP/LAN |
+| You want to avoid direct internet for transactions | Route through I2P or other anonymizing transport |
+| Remote community with one internet connection | Share blockchain access via Reticulum |
 
-## Use Case
+**The tradeoff:** You need a hub operator you trust with your view key (they can see your balance but cannot spend your funds).
 
-You're in a remote location with no internet. You have a LoRa radio or HF transceiver connected to your laptop. Back at your base, there's a Raspberry Pi with internet running a Monero node. Using ReticulumXMR, you can:
+## How It Works
 
-1. Check your Monero balance
-2. Create and sign transactions locally
-3. Broadcast them to the network
+```
+YOU (No Internet)                    HUB (Has Internet)
+┌────────────────┐                   ┌────────────────┐
+│ Your Device    │                   │ Raspberry Pi   │
+│                │   Reticulum       │                │
+│ - Full wallet  │◄─────────────────►│ - monerod      │
+│ - Spend key    │   (Radio/I2P/     │ - wallet-rpc   │
+│ - Signs tx     │    TCP/etc)       │ - View-only    │
+│                │                   │   wallet       │
+└────────────────┘                   └───────┬────────┘
+                                             │
+                                             ▼
+                                     ┌────────────────┐
+                                     │ Monero Network │
+                                     └────────────────┘
+```
 
-All communication happens over encrypted Reticulum channels - your private keys never leave your device.
+**Cold Signing Workflow:**
+1. You request your balance → Hub queries view-only wallet → Returns balance
+2. You request a transaction → Hub creates unsigned tx → You sign locally with your spend key
+3. You send signed tx to hub → Hub broadcasts to Monero network → Returns confirmation
+
+Your private keys **never leave your device**.
 
 ## Privacy
 
-**Both Reticulum and Monero privacy are fully preserved:**
+| Component | What It Knows |
+|-----------|---------------|
+| **Your device** | Everything (you control the spend key) |
+| **Hub** | Your balance and transaction history (view key) |
+| **Reticulum transport** | Nothing (end-to-end encrypted) |
+| **Monero network** | Standard Monero privacy applies |
 
-| Layer | Privacy Feature |
-|-------|-----------------|
-| Reticulum | End-to-end encryption (X25519 + AES-256) |
-| Reticulum | No IP addresses in mesh routing |
-| Reticulum | Forward secrecy on all links |
-| Monero | Private keys stay on your device |
-| Monero | View key on hub cannot spend funds |
-| Monero | Standard Monero privacy (ring signatures, stealth addresses) |
+The hub operator can see your balance but **cannot spend your funds**.
 
-The hub only has a **view-only wallet** - it can see your balance but cannot spend your funds. Transaction signing happens locally on your client device.
+## Requirements
 
-## Architecture
-
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                              YOUR SETUP                                      │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                              │
-│   ┌──────────────────┐        Reticulum Mesh        ┌──────────────────┐    │
-│   │   CLIENT (You)   │◄────────────────────────────►│   HUB (Base)     │    │
-│   │                  │   LoRa / HF Radio / TCP      │                  │    │
-│   │  Terminal 1:     │                              │  - monerod       │    │
-│   │   nomadnet       │                              │  - wallet-rpc    │    │
-│   │                  │                              │  - view-only     │    │
-│   │  Terminal 2:     │                              │    wallet        │    │
-│   │   reticulumxmr   │                              │  - Internet      │    │
-│   │   client         │                              │                  │    │
-│   │                  │                              │                  │    │
-│   │  Your wallet     │                              │                  │    │
-│   │  (spend key)     │                              │                  │    │
-│   └──────────────────┘                              └──────────────────┘    │
-│                                                              │               │
-│                                                              ▼               │
-│                                                     ┌──────────────────┐    │
-│                                                     │  Monero Network  │    │
-│                                                     └──────────────────┘    │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
-
-**Intended Usage: Two Terminals**
-- **Terminal 1**: `nomadnet` or `rnsh` for LXMF messaging and peer coordination
-- **Terminal 2**: `reticulumxmr-client` for Monero operations
-
-## Cold Signing Workflow
-
-1. **Client** requests balance from hub
-2. **Hub** queries view-only wallet, returns balance
-3. **Client** requests transaction (destination, amount)
-4. **Hub** creates unsigned transaction (~4 KB)
-5. **Client** signs locally with spend key (~3 KB)
-6. **Client** sends signed tx to hub
-7. **Hub** broadcasts to Monero network
-8. **Hub** returns tx hash confirmation
-
-**Total data: ~8 KB per transaction** - feasible over 1200 bps radio links.
-
-## Installation
-
-### Requirements
-
+**Hub (the device with internet):**
+- Raspberry Pi or similar (ARM64 or x86_64)
+- 50+ GB storage for pruned blockchain
+- Internet connection
+- Synced `monerod`
+- `monero-wallet-rpc` (v0.18.x)
 - Python 3.9+
-- Reticulum Network Stack (`pip install rns`)
-- Monero daemon (monerod) - hub only
-- monero-wallet-rpc - both hub and client
+- Reticulum (`pip install rns`)
 
-### Install
+**Client (your device):**
+- Any device running Python 3.9+
+- `monero-wallet-rpc` (v0.18.x)
+- Reticulum connectivity to the hub
+- Your Monero wallet file
+
+## Setup: Hub
+
+### Step 1: Install Monero
+
+Download from https://getmonero.org/downloads/ or build from source.
+
+```bash
+# Example for Linux ARM64 (Raspberry Pi)
+wget https://downloads.getmonero.org/cli/linuxarm8
+tar xjf linuxarm8
+cd monero-aarch64-linux-gnu-*
+```
+
+### Step 2: Sync the blockchain
+
+```bash
+./monerod --data-dir ~/.bitmonero --prune-blockchain
+```
+
+Wait for full sync (can take hours/days depending on connection).
+
+### Step 3: Create a view-only wallet
+
+You need the **view key** from the wallet you want to monitor. On the client machine where your full wallet exists:
+
+```bash
+./monero-wallet-cli --wallet-file your-wallet
+Password: ****
+[wallet]: address
+# Copy the primary address
+[wallet]: viewkey
+# Copy the secret view key (64 hex characters)
+```
+
+On the hub, create the view-only wallet:
+
+```bash
+./monero-wallet-cli --generate-from-view-key hub_viewonly
+# Enter the address when prompted
+# Enter the view key when prompted
+# Set a password (can be empty for RPC access)
+# Set restore height (block height when wallet was created, or 0 to scan all)
+```
+
+### Step 4: Start wallet-rpc on hub
+
+```bash
+./monero-wallet-rpc \
+    --daemon-address 127.0.0.1:18081 \
+    --rpc-bind-port 18085 \
+    --disable-rpc-login \
+    --wallet-dir /path/to/wallet/directory
+```
+
+Open the view-only wallet:
+```bash
+curl -X POST http://127.0.0.1:18085/json_rpc \
+    -H 'Content-Type: application/json' \
+    -d '{"jsonrpc":"2.0","id":"0","method":"open_wallet","params":{"filename":"hub_viewonly","password":""}}'
+```
+
+### Step 5: Install ReticulumXMR
 
 ```bash
 git clone https://github.com/LFManifesto/ReticulumXMR.git
@@ -107,95 +142,106 @@ source venv/bin/activate
 pip install -e .
 ```
 
-## Hub Setup
+### Step 6: Configure Reticulum
 
-The hub runs on a device with internet access (Raspberry Pi recommended).
+Edit `~/.reticulum/config` to add interfaces. Example for TCP server:
 
-### 1. Sync monerod
+```ini
+[reticulum]
+  enable_transport = True
 
-```bash
-monerod --data-dir ~/.bitmonero --prune-blockchain
+[[TCP Server]]
+  type = TCPServerInterface
+  enabled = yes
+  listen_ip = 0.0.0.0
+  listen_port = 4242
 ```
 
-### 2. Create view-only wallet
-
-From your main wallet, export the view key:
-```bash
-monero-wallet-cli
-> viewkey
-```
-
-Create view-only wallet on hub:
-```bash
-monero-wallet-cli --generate-from-view-key viewonly_wallet
-```
-
-### 3. Start wallet-rpc
-
-```bash
-monero-wallet-rpc \
-    --wallet-dir ~/.reticulumxmr/wallets \
-    --rpc-bind-port 18085 \
-    --disable-rpc-login \
-    --daemon-address 127.0.0.1:18081
-```
-
-Open the wallet:
-```bash
-curl -X POST http://127.0.0.1:18085/json_rpc -d '{
-  "jsonrpc":"2.0","id":"0","method":"open_wallet",
-  "params":{"filename":"viewonly_wallet","password":""}
-}' -H 'Content-Type: application/json'
-```
-
-### 4. Start Reticulum and Hub
-
-```bash
-rnsd  # Start Reticulum daemon
-python -m reticulumxmr.hub
-```
-
-The hub will display its destination hash - clients need this to connect.
-
-## Client Setup
-
-### 1. Start Reticulum
-
+Start Reticulum:
 ```bash
 rnsd
 ```
 
-### 2. Start wallet-rpc with your full wallet
+### Step 7: Start the hub
 
 ```bash
-monero-wallet-rpc \
-    --wallet-file ~/your-wallet \
-    --rpc-bind-port 18083 \
-    --disable-rpc-login \
-    --prompt-for-password
+source venv/bin/activate
+python -m reticulumxmr.hub
 ```
 
-### 3. Connect to hub
+The hub outputs its **destination hash** - clients need this to connect:
+```
+Destination: <70200bc639ee7cc0f385d6d4ca1c4afd>
+```
+
+## Setup: Client
+
+### Step 1: Install Monero wallet-rpc
+
+Same as hub - download from https://getmonero.org/downloads/
+
+### Step 2: Start wallet-rpc with your full wallet
 
 ```bash
+./monero-wallet-rpc \
+    --wallet-file /path/to/your-wallet \
+    --rpc-bind-port 18083 \
+    --disable-rpc-login \
+    --daemon-address 127.0.0.1:18081  # or remote node
+```
+
+Note: The client wallet-rpc needs daemon access for signing. You can use a remote node or skip this if only checking balance.
+
+### Step 3: Install ReticulumXMR
+
+```bash
+git clone https://github.com/LFManifesto/ReticulumXMR.git
+cd ReticulumXMR
+python3 -m venv venv
+source venv/bin/activate
+pip install -e .
+```
+
+### Step 4: Configure Reticulum
+
+Edit `~/.reticulum/config` to connect to the hub:
+
+```ini
+[[Hub Connection]]
+  type = TCPClientInterface
+  enabled = yes
+  target_host = <hub-ip-address>
+  target_port = 4242
+```
+
+For radio interfaces, see [Reticulum documentation](https://reticulum.network/manual/).
+
+Start Reticulum:
+```bash
+rnsd
+```
+
+### Step 5: Connect to hub
+
+```bash
+source venv/bin/activate
+
 # Check balance
 python -m reticulumxmr.client <hub-destination-hash> balance
 
-# Send XMR
-python -m reticulumxmr.client <hub-destination-hash> send <address> <amount>
+# Send XMR (requires wallet-rpc running with full wallet)
+python -m reticulumxmr.client <hub-destination-hash> send <recipient-address> <amount>
 ```
 
-## CLI Usage
+## Example Session
 
 ```bash
-# Get balance
-$ reticulumxmr-client <hub-hash> balance
+$ python -m reticulumxmr.client 70200bc639ee7cc0f385d6d4ca1c4afd balance
 Balance: 0.008969260000 XMR
 Unlocked: 0.008969260000 XMR
 Block height: 3559948
 
-# Send transaction
-$ reticulumxmr-client <hub-hash> send 4Bxxx... 0.001
+$ python -m reticulumxmr.client 70200bc639ee7cc0f385d6d4ca1c4afd send 4Bxxx... 0.001
 Creating transaction:
   To: 4Bxxx...
   Amount: 0.001 XMR
@@ -204,97 +250,48 @@ Creating transaction:
 Transaction broadcast!
   TX Hash: b9b45d1be49ee...
   Fee: 0.000021 XMR
-
-# Export outputs (for cold wallet sync)
-$ reticulumxmr-client <hub-hash> export-outputs
 ```
 
-## Data Sizes
+## Data Transfer Sizes
 
-Optimized for low-bandwidth mesh links:
+| Operation | Size | Time @ 1200 bps |
+|-----------|------|-----------------|
+| Balance query | ~500 B | <1 sec |
+| Full transaction | ~8 KB | ~53 sec |
 
-| Operation | Size | Time @ 1200 bps | Time @ 300 bps |
-|-----------|------|-----------------|----------------|
-| Balance query | ~500 B | <1 sec | ~13 sec |
-| Unsigned tx | ~4 KB | ~27 sec | ~107 sec |
-| Signed tx | ~3 KB | ~20 sec | ~80 sec |
-| **Full transaction** | **~8 KB** | **~53 sec** | **~3.5 min** |
+Transactions are feasible over slow radio links.
 
-## Reticulum Configuration
+## Tested Transports
 
-Ensure your Reticulum config (`~/.reticulum/config`) has appropriate interfaces:
+| Transport | Status |
+|-----------|--------|
+| TCP/IP | Verified |
+| I2P | Verified |
+| LoRa (RNode) | Untested |
+| HF Radio | Untested |
 
-```ini
-# For TCP (testing/local)
-[[TCP Interface]]
-  type = TCPClientInterface
-  enabled = yes
-  target_host = your-hub-ip
-  target_port = 4242
+## Limitations
 
-# For LoRa
-[[LoRa Interface]]
-  type = RNodeInterface
-  port = /dev/ttyUSB0
-  frequency = 915000000
-  bandwidth = 125000
-  txpower = 17
-```
-
-## Protocol Messages
-
-| Message | Direction | Purpose |
-|---------|-----------|---------|
-| ModeSelectionMessage | Client→Hub | Select cold_signing mode |
-| BalanceRequestMessage | Client→Hub | Request balance |
-| BalanceResponseMessage | Hub→Client | Return balance info |
-| CreateTransactionMessage | Client→Hub | Request unsigned tx |
-| UnsignedTransactionMessage | Hub→Client | Return unsigned tx |
-| SignedTransactionMessage | Client→Hub | Submit for broadcast |
-| TransactionResultMessage | Hub→Client | Broadcast confirmation |
-
-## Security Model
-
-- **Private keys**: Never leave client device
-- **View key**: Hub can see balance, cannot spend
-- **Transport**: End-to-end encrypted via Reticulum
-- **Signing**: All transactions signed locally
-- **No trust required**: Hub cannot steal funds
-
-## Tested Transactions
-
-| Date | TX Hash | Transport |
-|------|---------|-----------|
-| 2025-12-03 | `b9b45d1be49ee963...` | TCP via Reticulum |
-| 2025-12-06 | Balance queries verified | TCP + I2P |
+- Hub operator can see your balance (but cannot spend)
+- Requires view key sharing with hub
+- Client needs wallet-rpc for transaction signing
+- Not suitable for high-frequency trading
 
 ## Roadmap
 
-- [x] Cold signing workflow
 - [x] Balance queries
 - [x] Transaction broadcast
-- [ ] TUI client interface
-- [ ] LoRa transport testing
-- [ ] HF radio transport testing
-- [ ] Multi-operator support
-- [ ] Automatic key image sync
-
-## Dependencies
-
-- [Reticulum](https://github.com/markqvist/Reticulum) - Cryptographic mesh networking
-- [msgpack](https://msgpack.org/) - Efficient message serialization
-- [requests](https://requests.readthedocs.io/) - HTTP client for wallet-rpc
+- [ ] TUI interface
+- [ ] LoRa testing
+- [ ] HF radio testing
+- [ ] Multi-wallet hub support
 
 ## License
 
-MIT License - See LICENSE file
+MIT License
 
-## Contributing
+## Links
 
-Pull requests welcome. Testing on actual mesh hardware (LoRa, HF radio) especially appreciated.
-
-## Acknowledgments
-
-- [Monero Project](https://getmonero.org/) - Private digital currency
-- [Mark Qvist](https://github.com/markqvist) - Reticulum creator
-- Light Fighter Manifesto L.L.C.
+- [Reticulum Network Stack](https://reticulum.network/)
+- [Monero Project](https://getmonero.org/)
+- [Light Fighter Manifesto](https://lightfightermanifesto.org/)
