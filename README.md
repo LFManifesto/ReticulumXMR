@@ -2,7 +2,9 @@
 
 **Monero transactions over Reticulum networks**
 
-ReticulumXMR enables Monero transactions when you don't have direct internet access. Using the [Reticulum Network Stack](https://reticulum.network/), you can check balances and broadcast transactions over any transport Reticulum supports - including radio links, I2P, or local networks.
+ReticulumXMR enables Monero balance queries and transactions when you don't have direct internet access. Using the [Reticulum Network Stack](https://reticulum.network/), you can check balances and broadcast transactions over any transport Reticulum supports - including radio links, I2P, or local networks.
+
+> **Current Status:** Balance queries work reliably. Transaction signing requires [proper cold wallet setup](#critical-cold-wallet-setup) - see details below.
 
 ![TUI Screenshot](docs/tui-screenshot.png)
 
@@ -251,21 +253,19 @@ python -m reticulumxmr.client <hub-destination-hash> send <recipient-address> <a
 
 ## Example Session
 
+**Balance Query (verified working):**
 ```bash
 $ python -m reticulumxmr.client 70200bc639ee7cc0f385d6d4ca1c4afd balance
 Balance: 0.008969260000 XMR
 Unlocked: 0.008969260000 XMR
 Block height: 3559948
+```
 
+**Sending XMR (requires proper cold wallet setup):**
+```bash
 $ python -m reticulumxmr.client 70200bc639ee7cc0f385d6d4ca1c4afd send 4Bxxx... 0.001
-Creating transaction:
-  To: 4Bxxx...
-  Amount: 0.001 XMR
-  Priority: 1
-
-Transaction broadcast!
-  TX Hash: b9b45d1be49ee...
-  Fee: 0.000021 XMR
+# Only works if cold wallet pair was set up correctly from the start
+# See "CRITICAL: Cold Wallet Setup" section
 ```
 
 ## Usage Workflow
@@ -312,27 +312,75 @@ Transactions are feasible over slow radio links.
 
 ## Tested Transports
 
-| Transport | Status |
-|-----------|--------|
-| TCP/IP | Verified |
-| I2P | Verified |
-| LoRa (RNode) | Untested |
-| HF Radio | Untested |
+| Transport | Balance Queries | Transaction Signing |
+|-----------|-----------------|---------------------|
+| TCP/IP | Verified | Requires cold wallet setup |
+| I2P | Untested | Untested |
+| LoRa (RNode) | Untested | Untested |
+| HF Radio | Untested | Untested |
+
+## CRITICAL: Cold Wallet Setup
+
+**Transaction signing requires a proper cold wallet pair created from the start.** You cannot retrofit cold signing onto an existing wallet.
+
+### Why This Matters
+
+Monero's cold signing workflow requires:
+1. Cold wallet created FIRST (offline, has spend key)
+2. View-only wallet derived FROM the cold wallet (on hub)
+3. They must share synchronized cryptographic state from creation
+
+**If you:**
+- Already have a wallet and want to add a view-only copy → Cold signing will NOT work
+- Create a fresh wallet pair from scratch → Cold signing WILL work
+
+### Setting Up a Proper Wallet Pair
+
+**Step 1: Create cold wallet on client (offline machine)**
+```bash
+./monero-wallet-cli --generate-new-wallet cold_wallet --offline
+# Save the mnemonic seed securely
+# Note the address and view key
+```
+
+**Step 2: Create view-only wallet on hub**
+```bash
+./monero-wallet-cli --generate-from-view-key hub_viewonly
+# Enter the address from cold wallet
+# Enter the view key from cold wallet
+# Set restore height to current block height
+```
+
+**Step 3: Fund the new wallet**
+Send funds to the new wallet address. Wait for confirmations.
+
+**Step 4: Export/import outputs**
+```bash
+# On hub (view-only): export outputs
+curl -X POST http://127.0.0.1:18085/json_rpc -d '{"jsonrpc":"2.0","id":"0","method":"export_outputs","params":{"all":true}}'
+
+# On client (cold): import outputs
+curl -X POST http://127.0.0.1:18083/json_rpc -d '{"jsonrpc":"2.0","id":"0","method":"import_outputs","params":{"outputs_data_hex":"<from above>"}}'
+```
+
+Now cold signing will work correctly.
 
 ## Limitations
 
 - Hub operator can see your balance (but cannot spend)
 - Requires view key sharing with hub
-- Client needs wallet-rpc for transaction signing
+- **Cold signing requires proper wallet pair setup (see above)**
+- Client needs wallet-rpc in offline mode for transaction signing
 - Not suitable for high-frequency trading
 
 ## Roadmap
 
-- [x] Balance queries
-- [x] Transaction broadcast
+- [x] Balance queries (verified over TCP)
 - [x] TUI interface
+- [ ] Transaction signing (code complete, requires proper wallet setup)
 - [ ] LoRa testing
 - [ ] HF radio testing
+- [ ] I2P testing
 - [ ] Multi-wallet hub support
 
 ## License
