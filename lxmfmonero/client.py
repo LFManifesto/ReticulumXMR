@@ -111,6 +111,9 @@ class MoneroClient:
         # Register message handler
         self.router.register_delivery_callback(self._handle_lxmf_message)
 
+        # Announce our presence so hub can respond to us
+        self.router.announce(self.destination.hash)
+
         # Pending requests - map request_id to (event, response)
         self.pending: Dict[str, Dict] = {}
         self.pending_lock = threading.Lock()

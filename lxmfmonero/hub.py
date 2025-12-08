@@ -242,9 +242,19 @@ class MoneroHub:
         dest_identity = RNS.Identity.recall(dest_hash)
 
         if not dest_identity:
-            logger.warning(f"Cannot recall identity for {RNS.prettyhexrep(dest_hash)}")
-            # Request path and try again later? For now just log
-            return
+            logger.info(f"Identity not known for {RNS.prettyhexrep(dest_hash)}, requesting path...")
+            RNS.Transport.request_path(dest_hash)
+
+            # Wait for path resolution (up to 30 seconds)
+            for _ in range(30):
+                time.sleep(1)
+                dest_identity = RNS.Identity.recall(dest_hash)
+                if dest_identity:
+                    break
+
+            if not dest_identity:
+                logger.warning(f"Could not resolve identity for {RNS.prettyhexrep(dest_hash)}")
+                return
 
         # Create destination
         destination = RNS.Destination(
