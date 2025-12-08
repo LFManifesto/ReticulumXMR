@@ -195,10 +195,11 @@ class MoneroClient:
             )
 
             # Create LXMF message
+            # Source must be our delivery destination (not identity)
             content = request.to_json()
             lxm = LXMF.LXMessage(
                 destination,
-                self.identity,
+                self.destination,
                 content=content,
                 title="MoneroClient Request"
             )

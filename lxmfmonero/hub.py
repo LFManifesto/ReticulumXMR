@@ -255,10 +255,11 @@ class MoneroHub:
         )
 
         # Create LXMF message
+        # Source must be our delivery destination (not identity)
         content = response.to_json()
         lxm = LXMF.LXMessage(
             destination,
-            self.identity,
+            self.destination,
             content=content,
             title="MoneroHub Response"
         )
