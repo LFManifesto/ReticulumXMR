@@ -55,6 +55,52 @@ Time:    ~35 seconds
 └─────────────────────┘                    └─────────────────────┘
 ```
 
+## Prerequisites
+
+### 1. Install Reticulum
+
+```bash
+pip install rns lxmf
+```
+
+### 2. Configure Reticulum
+
+Edit `~/.reticulum/config` to connect to a testnet. Example for TCP testnet:
+
+```ini
+[interfaces]
+  [[RNS Testnet BetweenTheBorders]]
+    type = TCPClientInterface
+    enabled = yes
+    target_host = reticulum.betweentheborders.com
+    target_port = 4242
+```
+
+For I2P (requires i2pd running):
+```ini
+  [[I2P Interface]]
+    type = I2PInterface
+    enabled = yes
+    peers = <hub-i2p-b32-address>.b32.i2p
+```
+
+### 3. Start Reticulum Daemon
+
+```bash
+rnsd &
+```
+
+Verify connectivity:
+```bash
+rnstatus
+```
+
+### 4. Install Monero
+
+Download Monero CLI tools from https://getmonero.org/downloads/
+
+You need `monero-wallet-rpc` on both machines (hub and client).
+
 ## Installation
 
 ```bash
@@ -62,56 +108,117 @@ Time:    ~35 seconds
 git clone https://github.com/LFManifesto/LXMFMonero.git
 cd LXMFMonero
 
+# Create virtual environment (recommended)
+python3 -m venv venv
+source venv/bin/activate
+
 # Install
 pip install -e .
 ```
 
+## Wallet Setup
+
+### Creating the Wallet Pair
+
+You need two wallets created from the **same seed**:
+1. **Cold wallet** (full wallet with spend key) - stays on client machine
+2. **View-only wallet** (no spend key) - goes on hub machine
+
+**Step 1: Create or restore the cold wallet**
+```bash
+monero-wallet-cli --generate-new-wallet /path/to/cold-wallet
+# Or restore from seed:
+monero-wallet-cli --restore-deterministic-wallet --wallet-file /path/to/cold-wallet
+```
+
+**Step 2: Export view-only wallet**
+```bash
+monero-wallet-cli --wallet-file /path/to/cold-wallet
+# In wallet, run:
+viewkey
+# Note the secret view key
+address
+# Note the primary address
+```
+
+**Step 3: Create view-only wallet on hub machine**
+```bash
+monero-wallet-cli --generate-from-view-key /path/to/viewonly-wallet \
+    --address <your-primary-address> \
+    --viewkey <your-secret-view-key>
+```
+
+**Important**: Use an empty password or the same password on both wallets for simplicity with wallet-rpc.
+
 ## Quick Start
 
-### Hub Setup (View-Only Wallet)
+### Hub Setup (Server with monerod)
 
 The hub runs alongside a view-only Monero wallet and handles requests from clients.
 
-1. Start `monero-wallet-rpc` with your view-only wallet:
+**1. Ensure monerod is running and synced**
+
+The hub's wallet-rpc needs to connect to monerod. Use the **unrestricted RPC port** (typically 18083):
+
 ```bash
-monero-wallet-rpc --wallet-file /path/to/viewonly-wallet \
-    --rpc-bind-port 18082 --disable-rpc-login \
-    --daemon-address 127.0.0.1:18083  # Use unrestricted RPC port
+# Check monerod is accessible
+curl -s http://127.0.0.1:18083/json_rpc \
+  -d '{"jsonrpc":"2.0","id":"0","method":"get_info"}' | jq .result.height
 ```
 
-2. Start the hub:
+**2. Start wallet-rpc with view-only wallet**
 ```bash
-lxmfmonero-hub --wallet-rpc http://127.0.0.1:18082/json_rpc
+monero-wallet-rpc \
+    --wallet-file /path/to/viewonly-wallet \
+    --password '' \
+    --rpc-bind-port 18085 \
+    --disable-rpc-login \
+    --daemon-address 127.0.0.1:18083
 ```
 
-3. Note the destination hash printed at startup.
-
-### Client Setup (Cold Wallet)
-
-The client holds the spend key and can be air-gapped.
-
-1. Start `monero-wallet-rpc` with your cold wallet in **offline mode**:
+**3. Start the hub**
 ```bash
-monero-wallet-rpc --wallet-file /path/to/cold-wallet \
-    --rpc-bind-port 18087 --disable-rpc-login --offline
+lxmfmonero-hub --wallet-rpc http://127.0.0.1:18085/json_rpc
 ```
 
-2. **TUI Interface (Recommended):**
+**4. Note the destination hash** printed at startup (e.g., `f5ad834014699eadaf90685d141d89b1`)
+
+### Client Setup (Cold Wallet Machine)
+
+The client holds the spend key and can be air-gapped from the internet (only needs Reticulum connectivity).
+
+**1. Start wallet-rpc in offline mode**
 ```bash
-lxmfmonero-tui --hub <hub-destination-hash> \
-    --cold-wallet http://127.0.0.1:18087/json_rpc
+monero-wallet-rpc \
+    --wallet-file /path/to/cold-wallet \
+    --password '' \
+    --rpc-bind-port 18087 \
+    --disable-rpc-login \
+    --offline
 ```
 
-3. **CLI - Check balance:**
+**2. Verify path to hub**
+```bash
+rnpath <hub-destination-hash>
+# Should show: "Path found, destination is X hops away"
+```
+
+**3. Check balance (verifies full connectivity)**
 ```bash
 lxmfmonero-client --hub <hub-destination-hash> balance
 ```
 
-4. **CLI - Send XMR:**
+**4. Send XMR**
 ```bash
 lxmfmonero-client --hub <hub-destination-hash> \
     --cold-wallet http://127.0.0.1:18087/json_rpc \
-    send <address> <amount>
+    send <destination-address> <amount>
+```
+
+**5. TUI Interface (Recommended for regular use)**
+```bash
+lxmfmonero-tui --hub <hub-destination-hash> \
+    --cold-wallet http://127.0.0.1:18087/json_rpc
 ```
 
 ## TUI Interface
@@ -198,10 +305,82 @@ Mac (cold wallet) → BetweenTheBorders Testnet → Pi-1 (hub + monerod)
                            2 hops
 ```
 
-- **Transport**: TCPInterface to reticulum.betweentheborders.com:4242
-- **Round-trip**: ~20 seconds for full transaction (balance: 2-4 seconds)
-- **Large payloads**: 12KB+ signed transactions delivered reliably
-- **Mainnet**: Transaction successfully broadcast and confirmed
+**TCP Testnet:**
+- Transport: TCPInterface to reticulum.betweentheborders.com:4242
+- Round-trip: ~20 seconds for full transaction
+- Balance queries: 2-4 seconds
+
+**I2P (Anonymous):**
+- Transport: I2PInterface peer-to-peer
+- Round-trip: ~35 seconds for full transaction
+- Requires i2pd running on client
+
+**Performance:**
+- Large payloads: 12KB+ signed transactions delivered reliably
+- Mainnet: Multiple transactions successfully broadcast and confirmed
+
+## Example End-to-End Walkthrough
+
+This example shows the complete setup we used for testing.
+
+### Hub Machine (Raspberry Pi with monerod)
+
+```bash
+# 1. monerod running in Docker (or natively)
+# Exposes unrestricted RPC on port 18083 (localhost only)
+
+# 2. Start view-only wallet-rpc
+monero-wallet-rpc \
+    --wallet-file ~/.lxmfmonero/wallets/viewonly \
+    --password '' \
+    --rpc-bind-port 18085 \
+    --disable-rpc-login \
+    --daemon-address 127.0.0.1:18083
+
+# 3. Start hub (in another terminal)
+cd ~/LXMFMonero
+source venv/bin/activate
+lxmfmonero-hub --wallet-rpc http://127.0.0.1:18085/json_rpc --debug
+
+# Hub announces: f5ad834014699eadaf90685d141d89b1
+```
+
+### Client Machine (Mac with cold wallet)
+
+```bash
+# 1. Start Reticulum daemon
+source ~/venv/bin/activate
+rnsd &
+
+# 2. Verify testnet connectivity
+rnstatus
+# Should show TCPInterface connected
+
+# 3. Start cold wallet-rpc (offline mode)
+monero-wallet-rpc \
+    --wallet-file ~/.lxmfmonero/cold-wallet \
+    --password '' \
+    --rpc-bind-port 18087 \
+    --disable-rpc-login \
+    --offline
+
+# 4. Verify path to hub
+rnpath f5ad834014699eadaf90685d141d89b1
+# "Path found, destination is 2 hops away"
+
+# 5. Check balance
+lxmfmonero-client --hub f5ad834014699eadaf90685d141d89b1 balance
+# Balance: 0.00086928 XMR
+
+# 6. Send transaction
+lxmfmonero-client \
+    --hub f5ad834014699eadaf90685d141d89b1 \
+    --cold-wallet http://127.0.0.1:18087/json_rpc \
+    send 44Z5ZjuEiZrgTKJxXC3wMbRybZ9FHUDvA2HehTZF7ECK9xTBEkuoYjef2Yp9BJGriq13YzMusvz8u3A9X9XHQjtcJzEBJDZ 0.0001
+
+# Transaction broadcast!
+# TX Hash: 8f0295261a2ec04c6d4dcf0c9cc6b30278ab50caf9f6d27a61b562e6f3ebd761
+```
 
 ## Critical Procedures
 
