@@ -36,6 +36,7 @@ setup(
         "console_scripts": [
             "lxmfmonero-hub=lxmfmonero.hub:main",
             "lxmfmonero-client=lxmfmonero.client:main",
+            "lxmfmonero-tui=lxmfmonero.tui:main",
         ],
     },
 )
