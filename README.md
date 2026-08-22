@@ -1,6 +1,6 @@
 # LXMFMonero
 
-Monero wallet operations over LXMF/Reticulum mesh networks.
+Monero wallet operations over LXMF and the Reticulum Network Stack.
 
 ## Overview
 
